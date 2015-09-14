@@ -180,15 +180,16 @@ static LPBYTE get_regdata(LPWSTR data, DWORD reg_type, WCHAR separator, DWORD *r
     return out_data;
 }
 
-static int reg_add(WCHAR *key_name, WCHAR *value_name, BOOL value_empty,
+static int reg_add(WCHAR *key_name, WCHAR *class_name, WCHAR *value_name, BOOL value_empty,
     WCHAR *type, WCHAR separator, WCHAR *data, BOOL force)
 {
-    static const WCHAR stubW[] = {'A','D','D',' ','-',' ','%','s',
-        ' ','%','s',' ','%','d',' ','%','s',' ','%','s',' ','%','d','\n',0};
+    //static const WCHAR stubW[] = {'A','D','D',' ','-',' ','%','s',
+    //    ' ','%','s',' ','%','d',' ','%','s',' ','%','s',' ','%','d','\n',0};
+    static const WCHAR stubW[] = L"ADD - %s %s %s %d %s %s %d\n";
     LPWSTR p;
     HKEY root,subkey;
 
-    reg_printfW(stubW, key_name, value_name, value_empty, type, data, force);
+    reg_printfW(stubW, key_name, class_name, value_name, value_empty, type, data, force);
 
     if (key_name[0]=='\\' && key_name[1]=='\\')
     {
@@ -211,7 +212,20 @@ static int reg_add(WCHAR *key_name, WCHAR *value_name, BOOL value_empty,
         return 1;
     }
 
-    if(RegCreateKeyW(root,p,&subkey)!=ERROR_SUCCESS)
+    //if(RegCreateKeyW(root,p,&subkey)!=ERROR_SUCCESS)
+    //{
+    //    reg_message(STRING_INVALID_KEY);
+    //    return 1;
+    //}
+    if (ERROR_SUCCESS != RegCreateKeyExW(root, 
+        p, 
+        0, 
+        class_name, 
+        REG_OPTION_NON_VOLATILE, 
+        MAXIMUM_ALLOWED, 
+        NULL, 
+        &subkey, 
+        0))
     {
         reg_message(STRING_INVALID_KEY);
         return 1;
@@ -383,6 +397,19 @@ static int reg_query(WCHAR *key_name, WCHAR *value_name, BOOL value_empty,
     return 1;
 }
 
+WCHAR *concatenate_args(WCHAR *line, int size, int argc, const WCHAR *argvW[])
+{
+    for (int i = 0; i < argc; i++, argvW++)
+    {
+        if (i > 0)
+        {
+            wcscat_s(line, size, L" ");
+        }
+        wcscat_s(line, size, *argvW);
+    }
+    return line;
+}
+
 int wmain(int argc, WCHAR *argvW[])
 {
     int i;
@@ -399,6 +426,8 @@ int wmain(int argc, WCHAR *argvW[])
     static const WCHAR slashVAW[] = {'/','v','a',0};
     static const WCHAR slashVEW[] = {'/','v','e',0};
     static const WCHAR slashHelpW[] = {'/','?',0};
+    // extend
+    static const WCHAR slashCW[] = { '/', 'c', 0 };
 
     if (argc < 2 || !lstrcmpW(argvW[1], slashHelpW)
                  || !lstrcmpiW(argvW[1], slashHW))
@@ -411,6 +440,7 @@ int wmain(int argc, WCHAR *argvW[])
     {
         WCHAR *key_name, *value_name = NULL, *type = NULL, separator = '\0', *data = NULL;
         BOOL value_empty = FALSE, force = FALSE;
+        WCHAR *class_name = NULL;
 
         if (argc < 3)
         {
@@ -439,8 +469,10 @@ int wmain(int argc, WCHAR *argvW[])
                 data = argvW[++i];
             else if (!lstrcmpiW(argvW[i], slashFW))
                 force = TRUE;
+            else if (!lstrcmpiW(argvW[i], slashCW))
+                class_name = argvW[++i];
         }
-        return reg_add(key_name, value_name, value_empty, type, separator,
+        return reg_add(key_name, class_name, value_name, value_empty, type, separator,
             data, force);
     }
     else if (!lstrcmpiW(argvW[1], deleteW))
@@ -502,6 +534,21 @@ int wmain(int argc, WCHAR *argvW[])
                 subkey = TRUE;
         }
         return reg_query(key_name, value_name, value_empty, subkey);
+    }
+    else if (0 == lstrcmpiW(argvW[1], L"import")
+        || 0 == lstrcmpiW(argvW[1], L"export")
+        || 0 == lstrcmpiW(argvW[1], L"load")
+        || 0 == lstrcmpiW(argvW[1], L"unload"))
+    {
+        WCHAR reg_command[1024];
+        wcscpy_s(reg_command, 
+            sizeof(reg_command) / sizeof(WCHAR), 
+            L"reg ");
+        concatenate_args(reg_command, 
+            sizeof(reg_command) / sizeof(WCHAR), 
+            argc - 1, 
+            &argvW[1]);
+        return _wsystem(reg_command);
     }
     else
     {
