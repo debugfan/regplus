@@ -222,7 +222,7 @@ static int reg_add(WCHAR *key_name, WCHAR *class_name, WCHAR *value_name, BOOL v
         0, 
         class_name, 
         REG_OPTION_NON_VOLATILE, 
-        MAXIMUM_ALLOWED, 
+        KEY_ALL_ACCESS,
         NULL, 
         &subkey, 
         0))
@@ -388,13 +388,45 @@ static int reg_delete(WCHAR *key_name, WCHAR *value_name, BOOL value_empty,
 }
 
 static int reg_query(WCHAR *key_name, WCHAR *value_name, BOOL value_empty,
-    BOOL subkey)
+    BOOL is_subkey)
 {
+    LPWSTR p;
+    HKEY root, subkey;
+
     static const WCHAR stubW[] = {'S','T','U','B',' ','Q','U','E','R','Y',' ',
         '-',' ','%','s',' ','%','s',' ','%','d',' ','%','d','\n',0};
-    reg_printfW(stubW, key_name, value_name, value_empty, subkey);
+    reg_printfW(stubW, key_name, value_name, value_empty, is_subkey);
 
-    return 1;
+    if (key_name[0] == '\\' && key_name[1] == '\\')
+    {
+        reg_message(STRING_NO_REMOTE);
+        return 1;
+    }
+
+    p = strchrW(key_name, '\\');
+    if (!p)
+    {
+        reg_message(STRING_INVALID_KEY);
+        return 1;
+    }
+    p++;
+
+    root = get_rootkey(key_name);
+    if (!root)
+    {
+        reg_message(STRING_INVALID_KEY);
+        return 1;
+    }
+
+    if (RegOpenKeyW(root, p, &subkey) != ERROR_SUCCESS)
+    {
+        reg_message(STRING_CANNOT_FIND);
+        return 1;
+    }
+
+    RegCloseKey(subkey);
+
+    return 0;
 }
 
 WCHAR *concatenate_args(WCHAR *line, int size, int argc, const WCHAR *argvW[])
@@ -509,7 +541,7 @@ int wmain(int argc, WCHAR *argvW[])
     else if (!lstrcmpiW(argvW[1], queryW))
     {
         WCHAR *key_name, *value_name = NULL;
-        BOOL value_empty = FALSE, subkey = FALSE;
+        BOOL value_empty = FALSE, is_subkey = FALSE;
 
         if (argc < 3)
         {
@@ -531,9 +563,9 @@ int wmain(int argc, WCHAR *argvW[])
             else if (!lstrcmpiW(argvW[i], slashVEW))
                 value_empty = TRUE;
             else if (!lstrcmpiW(argvW[i], slashSW))
-                subkey = TRUE;
+                is_subkey = TRUE;
         }
-        return reg_query(key_name, value_name, value_empty, subkey);
+        return reg_query(key_name, value_name, value_empty, is_subkey);
     }
     else if (0 == lstrcmpiW(argvW[1], L"import")
         || 0 == lstrcmpiW(argvW[1], L"export")
